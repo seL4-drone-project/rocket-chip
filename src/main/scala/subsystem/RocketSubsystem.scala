@@ -10,7 +10,7 @@ import freechips.rocketchip.devices.debug.{HasPeripheryDebug, HasPeripheryDebugM
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.diplomaticobjectmodel.logicaltree._
 import freechips.rocketchip.diplomaticobjectmodel.model._
-import freechips.rocketchip.prci.{ClockAdapterNode, ClockNode, ClockTempNode, ResetStretcher}
+import freechips.rocketchip.prci.{ResetCrossingType, NoResetCrossing}
 import freechips.rocketchip.tile._
 
 case class RocketCrossingParams(
@@ -18,16 +18,8 @@ case class RocketCrossingParams(
   master: TileMasterPortParams = TileMasterPortParams(),
   slave: TileSlavePortParams = TileSlavePortParams(),
   mmioBaseAddressPrefixWhere: TLBusWrapperLocation = CBUS,
-  stretchResetCycles: Option[Int] = None
+  resetCrossingType: ResetCrossingType = NoResetCrossing()
 ) extends TileCrossingParamsLike {
-  def injectClockNode(context: Attachable)(implicit p: Parameters): ClockNode = {
-    if (stretchResetCycles.isDefined) {
-      val rs = LazyModule(new ResetStretcher(stretchResetCycles.get))
-      rs.node
-    } else {
-      ClockTempNode()
-    }
-  }
   def forceSeparateClockReset: Boolean = false
 }
 
