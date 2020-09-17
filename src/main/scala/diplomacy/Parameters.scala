@@ -305,7 +305,7 @@ object TriStateValue
 sealed trait ClockCrossingType
 {
   def sameClock = this match {
-    case _: SynchronousCrossing => true
+    case _: SynchronousCrossing | _: CreditedCrossing => true
     case _ => false
   }
 }
