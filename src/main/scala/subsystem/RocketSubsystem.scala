@@ -2,21 +2,28 @@
 
 package freechips.rocketchip.subsystem
 
-import Chisel._
-import chisel3.internal.sourceinfo.SourceInfo
 import freechips.rocketchip.config.{Field, Parameters}
-import freechips.rocketchip.devices.tilelink._
-import freechips.rocketchip.devices.debug.{HasPeripheryDebug, HasPeripheryDebugModuleImp}
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.diplomaticobjectmodel.logicaltree._
-import freechips.rocketchip.diplomaticobjectmodel.model._
+import freechips.rocketchip.prci.{ClockNode, ClockTempNode, ResetStretcher}
 import freechips.rocketchip.tile._
 
 case class RocketCrossingParams(
   crossingType: ClockCrossingType = SynchronousCrossing(),
-  master: TileMasterPortParams = TileMasterPortParams(),
-  slave: TileSlavePortParams = TileSlavePortParams()
-) extends TileCrossingParamsLike
+  master: TilePortParamsLike = TileMasterPortParams(),
+  slave: TileSlavePortParams = TileSlavePortParams(),
+  mmioBaseAddressPrefixWhere: TLBusWrapperLocation = CBUS,
+  stretchResetCycles: Option[Int] = None
+) extends TileCrossingParamsLike {
+  def injectClockNode(context: Attachable)(implicit p: Parameters): ClockNode = {
+    if (stretchResetCycles.isDefined) {
+      val rs = LazyModule(new ResetStretcher(stretchResetCycles.get))
+      rs.node
+    } else {
+      ClockTempNode()
+    }
+  }
+  def forceSeparateClockReset: Boolean = false
+}
 
 case class RocketTileAttachParams(
   tileParams: RocketTileParams,

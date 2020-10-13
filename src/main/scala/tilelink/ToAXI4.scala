@@ -8,7 +8,6 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.amba._
-import scala.math.{min, max}
 
 class AXI4TLStateBundle(val sourceBits: Int) extends Bundle {
   val size   = UInt(width = 4)
@@ -33,7 +32,7 @@ class TLtoAXI4IdMap(tl: TLMasterPortParameters, axi4: AXI4MasterPortParameters)
   private val sorted = tl.clients.sortBy(_.sourceId).sortWith(TLToAXI4.sortByType)
 
   val mapping: Seq[TLToAXI4IdMapEntry] = (sorted zip axi4.masters) map { case (c, m) =>
-    TLToAXI4IdMapEntry(m.id, c.sourceId, c.name, c.supportsProbe, c.requestFifo)
+    TLToAXI4IdMapEntry(m.id, c.sourceId, c.name, c.supports.probe, c.requestFifo)
   }
 }
 
@@ -42,6 +41,7 @@ case class TLToAXI4IdMapEntry(axi4Id: IdRange, tlId: IdRange, name: String, isCa
 {
   val from = tlId
   val to = axi4Id
+  val maxTransactionsInFlight = Some(tlId.size)
 }
 
 case class TLToAXI4Node(stripBits: Int = 0, wcorrupt: Boolean = true)(implicit valName: ValName) extends MixedAdapterNode(TLImp, AXI4Imp)(
@@ -278,10 +278,10 @@ object TLToAXI4
   }
 
   def sortByType(a: TLMasterParameters, b: TLMasterParameters): Boolean = {
-    if ( a.supportsProbe && !b.supportsProbe) return false
-    if (!a.supportsProbe &&  b.supportsProbe) return true
-    if ( a.requestFifo   && !b.requestFifo  ) return false
-    if (!a.requestFifo   &&  b.requestFifo  ) return true
+    if ( a.supports.probe && !b.supports.probe) return false
+    if (!a.supports.probe &&  b.supports.probe) return true
+    if ( a.requestFifo    && !b.requestFifo   ) return false
+    if (!a.requestFifo    &&  b.requestFifo   ) return true
     return false
   }
 }

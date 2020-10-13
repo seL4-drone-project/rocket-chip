@@ -8,7 +8,6 @@ import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 import scala.math.max
-import scala.reflect.ClassTag
 
 //These transfer sizes describe requests issued from masters on the A channel that will be responded by slaves on the D channel
 case class TLMasterToSlaveTransferSizes(
@@ -31,15 +30,15 @@ case class TLMasterToSlaveTransferSizes(
     putFull    = putFull   .intersect(rhs.putFull),
     putPartial = putPartial.intersect(rhs.putPartial),
     hint       = hint      .intersect(rhs.hint))
-  def cover(rhs: TLMasterToSlaveTransferSizes) = TLMasterToSlaveTransferSizes(
-    acquireT   = acquireT  .cover(rhs.acquireT),
-    acquireB   = acquireB  .cover(rhs.acquireB),
-    arithmetic = arithmetic.cover(rhs.arithmetic),
-    logical    = logical   .cover(rhs.logical),
-    get        = get       .cover(rhs.get),
-    putFull    = putFull   .cover(rhs.putFull),
-    putPartial = putPartial.cover(rhs.putPartial),
-    hint       = hint      .cover(rhs.hint))
+  def mincover(rhs: TLMasterToSlaveTransferSizes) = TLMasterToSlaveTransferSizes(
+    acquireT   = acquireT  .mincover(rhs.acquireT),
+    acquireB   = acquireB  .mincover(rhs.acquireB),
+    arithmetic = arithmetic.mincover(rhs.arithmetic),
+    logical    = logical   .mincover(rhs.logical),
+    get        = get       .mincover(rhs.get),
+    putFull    = putFull   .mincover(rhs.putFull),
+    putPartial = putPartial.mincover(rhs.putPartial),
+    hint       = hint      .mincover(rhs.hint))
   // Reduce rendering to a simple yes/no per field
   override def toString = {
     def str(x: TransferSizes, flag: String) = if (x.none) "" else flag
@@ -101,14 +100,14 @@ case class TLSlaveToMasterTransferSizes(
     putPartial = putPartial.intersect(rhs.putPartial),
     hint       = hint      .intersect(rhs.hint)
   )
-  def cover(rhs: TLSlaveToMasterTransferSizes) = TLSlaveToMasterTransferSizes(
-    probe      = probe     .cover(rhs.probe),
-    arithmetic = arithmetic.cover(rhs.arithmetic),
-    logical    = logical   .cover(rhs.logical),
-    get        = get       .cover(rhs.get),
-    putFull    = putFull   .cover(rhs.putFull),
-    putPartial = putPartial.cover(rhs.putPartial),
-    hint       = hint      .cover(rhs.hint)
+  def mincover(rhs: TLSlaveToMasterTransferSizes) = TLSlaveToMasterTransferSizes(
+    probe      = probe     .mincover(rhs.probe),
+    arithmetic = arithmetic.mincover(rhs.arithmetic),
+    logical    = logical   .mincover(rhs.logical),
+    get        = get       .mincover(rhs.get),
+    putFull    = putFull   .mincover(rhs.putFull),
+    putPartial = putPartial.mincover(rhs.putPartial),
+    hint       = hint      .mincover(rhs.hint)
   )
   // Reduce rendering to a simple yes/no per field
   override def toString = {
@@ -296,11 +295,40 @@ class TLSlaveParameters private(
         putFull       = supportsPutFull,
         putPartial    = supportsPutPartial,
         hint          = supportsHint),
-      emits           = emits,
+      emits         = emits,
       mayDenyGet    = mayDenyGet,
       mayDenyPut    = mayDenyPut,
       alwaysGrantsT = alwaysGrantsT,
       fifoId        = fifoId)
+  }
+
+  def v2copy(
+    nodePath:      Seq[BaseNode]                = nodePath,
+    resources:     Seq[Resource]                = resources,
+    name:          Option[String]               = setName,
+    address:       Seq[AddressSet]              = address,
+    regionType:    RegionType.T                 = regionType,
+    executable:    Boolean                      = executable,
+    fifoId:        Option[Int]                  = fifoId,
+    supports:      TLMasterToSlaveTransferSizes = supports,
+    emits:         TLSlaveToMasterTransferSizes = emits,
+    alwaysGrantsT: Boolean                      = alwaysGrantsT,
+    mayDenyGet:    Boolean                      = mayDenyGet,
+    mayDenyPut:    Boolean                      = mayDenyPut) =
+  {
+    new TLSlaveParameters(
+      nodePath      = nodePath,
+      resources     = resources,
+      setName       = name,
+      address       = address,
+      regionType    = regionType,
+      executable    = executable,
+      fifoId        = fifoId,
+      supports      = supports,
+      emits         = emits,
+      alwaysGrantsT = alwaysGrantsT,
+      mayDenyGet    = mayDenyGet,
+      mayDenyPut    = mayDenyPut)
   }
 
   @deprecated("Use v1copy instead of copy","")
@@ -385,6 +413,35 @@ object TLSlaveParameters {
       mayDenyPut    = mayDenyPut,
       alwaysGrantsT = alwaysGrantsT,
       fifoId        = fifoId)
+  }
+
+  def v2(
+    address:       Seq[AddressSet],
+    nodePath:      Seq[BaseNode]                = Seq(),
+    resources:     Seq[Resource]                = Seq(),
+    name:          Option[String]               = None,
+    regionType:    RegionType.T                 = RegionType.GET_EFFECTS,
+    executable:    Boolean                      = false,
+    fifoId:        Option[Int]                  = None,
+    supports:      TLMasterToSlaveTransferSizes = TLMasterToSlaveTransferSizes.unknownSupports,
+    emits:         TLSlaveToMasterTransferSizes = TLSlaveToMasterTransferSizes.unknownEmits,
+    alwaysGrantsT: Boolean                      = false,
+    mayDenyGet:    Boolean                      = false,
+    mayDenyPut:    Boolean                      = false) =
+  {
+    new TLSlaveParameters(
+    nodePath      = nodePath,
+    resources     = resources,
+    setName       = name,
+    address       = address,
+    regionType    = regionType,
+    executable    = executable,
+    fifoId        = fifoId,
+    supports      = supports,
+    emits         = emits,
+    alwaysGrantsT = alwaysGrantsT,
+    mayDenyGet    = mayDenyGet,
+    mayDenyPut    = mayDenyPut)
   }
 }
 
@@ -499,28 +556,37 @@ class TLSlavePortParameters private(
   def mayDenyGet  = slaves.exists(_.mayDenyGet)
   def mayDenyPut  = slaves.exists(_.mayDenyPut)
 
+  // Diplomatically determined operation sizes emitted by all outward Slaves
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val allEmitClaims = slaves.map(_.emits).reduce( _ intersect _)
+
+  // Operation Emitted by at least one outward Slaves
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val anyEmitClaims = slaves.map(_.emits).reduce(_ mincover _)
+
   // Diplomatically determined operation sizes supported by all outward Slaves
-  // as opposed to supportsSafe/supportsFast which generate circuitry to check which specific addresses
-  val allSupports = slaves.map(_.supports).reduce( _ intersect _)
-  val allSupportAcquireT   = allSupports.acquireT
-  val allSupportAcquireB   = allSupports.acquireB
-  val allSupportArithmetic = allSupports.arithmetic
-  val allSupportLogical    = allSupports.logical
-  val allSupportGet        = allSupports.get
-  val allSupportPutFull    = allSupports.putFull
-  val allSupportPutPartial = allSupports.putPartial
-  val allSupportHint       = allSupports.hint
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val allSupportClaims = slaves.map(_.supports).reduce( _ intersect _)
+  val allSupportAcquireT   = allSupportClaims.acquireT
+  val allSupportAcquireB   = allSupportClaims.acquireB
+  val allSupportArithmetic = allSupportClaims.arithmetic
+  val allSupportLogical    = allSupportClaims.logical
+  val allSupportGet        = allSupportClaims.get
+  val allSupportPutFull    = allSupportClaims.putFull
+  val allSupportPutPartial = allSupportClaims.putPartial
+  val allSupportHint       = allSupportClaims.hint
 
   // Operation supported by at least one outward Slaves
-  val anySupports = slaves.map(_.supports).reduce(_ cover _)
-  val anySupportAcquireT   = !anySupports.acquireT.none
-  val anySupportAcquireB   = !anySupports.acquireB.none
-  val anySupportArithmetic = !anySupports.arithmetic.none
-  val anySupportLogical    = !anySupports.logical.none
-  val anySupportGet        = !anySupports.get.none
-  val anySupportPutFull    = !anySupports.putFull.none
-  val anySupportPutPartial = !anySupports.putPartial.none
-  val anySupportHint       = !anySupports.hint.none
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val anySupportClaims = slaves.map(_.supports).reduce(_ mincover _)
+  val anySupportAcquireT   = !anySupportClaims.acquireT.none
+  val anySupportAcquireB   = !anySupportClaims.acquireB.none
+  val anySupportArithmetic = !anySupportClaims.arithmetic.none
+  val anySupportLogical    = !anySupportClaims.logical.none
+  val anySupportGet        = !anySupportClaims.get.none
+  val anySupportPutFull    = !anySupportClaims.putFull.none
+  val anySupportPutPartial = !anySupportClaims.putPartial.none
+  val anySupportHint       = !anySupportClaims.hint.none
 
   // Supporting Acquire means being routable for GrantAck
   require ((endSinkId == 0) == !anySupportAcquireB)
@@ -677,6 +743,23 @@ class TLSlavePortParameters private(
       requestKeys    = requestKeys)
   }
 
+    def v2copy(
+    slaves:         Seq[TLSlaveParameters] = slaves,
+    channelBytes:   TLChannelBeatBytes     = channelBytes,
+    endSinkId:      Int                    = endSinkId,
+    minLatency:     Int                    = minLatency,
+    responseFields: Seq[BundleFieldBase]   = responseFields,
+    requestKeys:    Seq[BundleKeyBase]     = requestKeys) =
+  {
+    new TLSlavePortParameters(
+      slaves         = slaves,
+      channelBytes   = channelBytes,
+      endSinkId      = endSinkId,
+      minLatency     = minLatency,
+      responseFields = responseFields,
+      requestKeys    = requestKeys)
+  }
+
   @deprecated("Use v1copy instead of copy","")
   def copy(
     managers:   Seq[TLSlaveParameters] = slaves,
@@ -784,24 +867,24 @@ class TLMasterParameters private(
 
   require (!sourceId.isEmpty)
   require (!visibility.isEmpty)
-  require (supportsPutFull.contains(supportsPutPartial))
+  require (supports.putFull.contains(supports.putPartial))
   // We only support these operations if we support Probe (ie: we're a cache)
-  require (supportsProbe.contains(supportsArithmetic))
-  require (supportsProbe.contains(supportsLogical))
-  require (supportsProbe.contains(supportsGet))
-  require (supportsProbe.contains(supportsPutFull))
-  require (supportsProbe.contains(supportsPutPartial))
-  require (supportsProbe.contains(supportsHint))
+  require (supports.probe.contains(supports.arithmetic))
+  require (supports.probe.contains(supports.logical))
+  require (supports.probe.contains(supports.get))
+  require (supports.probe.contains(supports.putFull))
+  require (supports.probe.contains(supports.putPartial))
+  require (supports.probe.contains(supports.hint))
 
   visibility.combinations(2).foreach { case Seq(x,y) => require (!x.overlaps(y), s"$x and $y overlap.") }
 
   val maxTransfer = List(
-    supportsProbe.max,
-    supportsArithmetic.max,
-    supportsLogical.max,
-    supportsGet.max,
-    supportsPutFull.max,
-    supportsPutPartial.max).max
+    supports.probe.max,
+    supports.arithmetic.max,
+    supports.logical.max,
+    supports.get.max,
+    supports.putFull.max,
+    supports.putPartial.max).max
 
   def infoString = {
     s"""Master Name = ${name}
@@ -844,6 +927,33 @@ class TLMasterParameters private(
         hint              = supportsHint),
       emits             = this.emits,
       neverReleasesData = this.neverReleasesData,
+      sourceId          = sourceId)
+  }
+
+  def v2copy(
+    nodePath:          Seq[BaseNode]                = nodePath,
+    resources:         Seq[Resource]                = resources,
+    name:              String                       = name,
+    visibility:        Seq[AddressSet]              = visibility,
+    unusedRegionTypes: Set[RegionType.T]            = unusedRegionTypes,
+    executesOnly:      Boolean                      = executesOnly,
+    requestFifo:       Boolean                      = requestFifo,
+    supports:          TLSlaveToMasterTransferSizes = supports,
+    emits:             TLMasterToSlaveTransferSizes = emits,
+    neverReleasesData: Boolean                      = neverReleasesData,
+    sourceId:          IdRange                      = sourceId) =
+  {
+    new TLMasterParameters(
+      nodePath          = nodePath,
+      resources         = resources,
+      name              = name,
+      visibility        = visibility,
+      unusedRegionTypes = unusedRegionTypes,
+      executesOnly      = executesOnly,
+      requestFifo       = requestFifo,
+      supports          = supports,
+      emits             = emits,
+      neverReleasesData = neverReleasesData,
       sourceId          = sourceId)
   }
 
@@ -911,6 +1021,33 @@ object TLMasterParameters {
         hint              = supportsHint),
       emits             = TLMasterToSlaveTransferSizes.unknownEmits,
       neverReleasesData = false,
+      sourceId          = sourceId)
+  }
+
+  def v2(
+    nodePath:          Seq[BaseNode]                = Seq(),
+    resources:         Seq[Resource]                = Nil,
+    name:              String,
+    visibility:        Seq[AddressSet]              = Seq(AddressSet(0, ~0)),
+    unusedRegionTypes: Set[RegionType.T]            = Set(),
+    executesOnly:      Boolean                      = false,
+    requestFifo:       Boolean                      = false,
+    supports:          TLSlaveToMasterTransferSizes = TLSlaveToMasterTransferSizes.unknownSupports,
+    emits:             TLMasterToSlaveTransferSizes = TLMasterToSlaveTransferSizes.unknownEmits,
+    neverReleasesData: Boolean                      = false,
+    sourceId:          IdRange                      = IdRange(0,1)) =
+  {
+    new TLMasterParameters(
+      nodePath          = nodePath,
+      resources         = resources,
+      name              = name,
+      visibility        = visibility,
+      unusedRegionTypes = unusedRegionTypes,
+      executesOnly      = executesOnly,
+      requestFifo       = requestFifo,
+      supports          = supports,
+      emits             = emits,
+      neverReleasesData = neverReleasesData,
       sourceId          = sourceId)
   }
 }
@@ -990,7 +1127,16 @@ class TLMasterPortParameters private(
     }
   }
 
-  // Operation sizes supported by all inward Masters
+  // Diplomatically determined operation sizes emitted by all inward Masters
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val allEmitClaims = masters.map(_.emits).reduce( _ intersect _)
+
+  // Diplomatically determined operation sizes Emitted by at least one inward Masters
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
+  val anyEmitClaims = masters.map(_.emits).reduce(_ mincover _)
+
+  // Diplomatically determined operation sizes supported by all inward Masters
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
   val allSupportProbe      = masters.map(_.supportsProbe)     .reduce(_ intersect _)
   val allSupportArithmetic = masters.map(_.supportsArithmetic).reduce(_ intersect _)
   val allSupportLogical    = masters.map(_.supportsLogical)   .reduce(_ intersect _)
@@ -999,7 +1145,8 @@ class TLMasterPortParameters private(
   val allSupportPutPartial = masters.map(_.supportsPutPartial).reduce(_ intersect _)
   val allSupportHint       = masters.map(_.supportsHint)      .reduce(_ intersect _)
 
-  // Operation is supported by at least one master
+  // Diplomatically determined operation sizes supported by at least one master
+  // as opposed to expectsVipChecker which generate circuitry to check which specific addresses
   val anySupportProbe      = masters.map(!_.supportsProbe.none)     .reduce(_ || _)
   val anySupportArithmetic = masters.map(!_.supportsArithmetic.none).reduce(_ || _)
   val anySupportLogical    = masters.map(!_.supportsLogical.none)   .reduce(_ || _)
@@ -1096,6 +1243,23 @@ class TLMasterPortParameters private(
       responseKeys  = responseKeys)
   }
 
+  def v2copy(
+    masters:       Seq[TLMasterParameters] = masters,
+    channelBytes:  TLChannelBeatBytes      = channelBytes,
+    minLatency:    Int                     = minLatency,
+    echoFields:    Seq[BundleFieldBase]    = echoFields,
+    requestFields: Seq[BundleFieldBase]    = requestFields,
+    responseKeys:  Seq[BundleKeyBase]      = responseKeys) =
+  {
+    new TLMasterPortParameters(
+      masters       = masters,
+      channelBytes  = channelBytes,
+      minLatency    = minLatency,
+      echoFields    = echoFields,
+      requestFields = requestFields,
+      responseKeys  = responseKeys)
+  }
+
   @deprecated("Use v1copy instead of copy","")
   def copy(
     clients: Seq[TLMasterParameters] = masters,
@@ -1133,8 +1297,8 @@ object TLClientPortParameters {
 
 object TLMasterPortParameters {
   def v1(
-    clients: Seq[TLMasterParameters],
-    minLatency: Int = 0,
+    clients:       Seq[TLMasterParameters],
+    minLatency:    Int = 0,
     echoFields:    Seq[BundleFieldBase] = Nil,
     requestFields: Seq[BundleFieldBase] = Nil,
     responseKeys:  Seq[BundleKeyBase]   = Nil) =
@@ -1142,6 +1306,22 @@ object TLMasterPortParameters {
     new TLMasterPortParameters(
       masters       = clients,
       channelBytes  = TLChannelBeatBytes(),
+      minLatency    = minLatency,
+      echoFields    = echoFields,
+      requestFields = requestFields,
+      responseKeys  = responseKeys)
+  }
+  def v2(
+    masters:       Seq[TLMasterParameters],
+    channelBytes:  TLChannelBeatBytes   = TLChannelBeatBytes(),
+    minLatency:    Int                  = 0,
+    echoFields:    Seq[BundleFieldBase] = Nil,
+    requestFields: Seq[BundleFieldBase] = Nil,
+    responseKeys:  Seq[BundleKeyBase]   = Nil) =
+  {
+    new TLMasterPortParameters(
+      masters       = masters,
+      channelBytes  = channelBytes,
       minLatency    = minLatency,
       echoFields    = echoFields,
       requestFields = requestFields,
@@ -1228,6 +1408,8 @@ case class TLEdgeParameters(
   // Sanity check the link...
   require (maxTransfer >= slave.beatBytes, s"Link's max transfer (${maxTransfer}) < ${slave.slaves.map(_.name)}'s beatBytes (${slave.beatBytes})")
 
+  def diplomaticClaimsMasterToSlave = master.anyEmitClaims.intersect(slave.anySupportClaims)
+
   // For emits, check that the source is allowed to send this transactions
   //These A channel messages from MasterToSlave are:
   //being routed to a slave based on address bits,
@@ -1262,6 +1444,36 @@ case class TLEdgeParameters(
 
   val bundle = TLBundleParameters(master, slave)
   def formatEdge = master.infoString + "\n" + slave.infoString
+}
+
+case class TLCreditedDelay(
+  a: CreditedDelay,
+  b: CreditedDelay,
+  c: CreditedDelay,
+  d: CreditedDelay,
+  e: CreditedDelay)
+{
+  def + (that: TLCreditedDelay): TLCreditedDelay = TLCreditedDelay(
+    a = a + that.a,
+    b = b + that.b,
+    c = c + that.c,
+    d = d + that.d,
+    e = e + that.e)
+
+  override def toString = s"(${a}, ${b}, ${c}, ${d}, ${e})"
+}
+
+object TLCreditedDelay {
+  def apply(delay: CreditedDelay): TLCreditedDelay = apply(delay, delay.flip, delay, delay.flip, delay)
+}
+
+case class TLCreditedManagerPortParameters(delay: TLCreditedDelay, base: TLSlavePortParameters) {def infoString = base.infoString}
+case class TLCreditedClientPortParameters(delay: TLCreditedDelay, base: TLMasterPortParameters) {def infoString = base.infoString}
+case class TLCreditedEdgeParameters(client: TLCreditedClientPortParameters, manager: TLCreditedManagerPortParameters, params: Parameters, sourceInfo: SourceInfo) extends FormatEdge
+{
+  val delay = client.delay + manager.delay
+  val bundle = TLBundleParameters(client.base, manager.base)
+  def formatEdge = client.infoString + "\n" + manager.infoString
 }
 
 case class TLAsyncManagerPortParameters(async: AsyncQueueParams, base: TLSlavePortParameters) {def infoString = base.infoString}
@@ -1343,7 +1555,7 @@ class TLSourceIdMap(tl: TLMasterPortParameters) extends IdMap[TLSourceIdMapEntry
   private val sorted = tl.masters.sortBy(_.sourceId)
 
   val mapping: Seq[TLSourceIdMapEntry] = sorted.map { case c =>
-    TLSourceIdMapEntry(c.sourceId, c.name, c.supportsProbe, c.requestFifo)
+    TLSourceIdMapEntry(c.sourceId, c.name, c.supports.probe, c.requestFifo)
   }
 }
 
@@ -1352,4 +1564,5 @@ case class TLSourceIdMapEntry(tlId: IdRange, name: String, isCache: Boolean, req
 {
   val from = tlId
   val to = tlId
+  val maxTransactionsInFlight = Some(tlId.size)
 }

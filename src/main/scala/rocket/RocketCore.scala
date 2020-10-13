@@ -12,7 +12,6 @@ import freechips.rocketchip.tile._
 import freechips.rocketchip.util._
 import freechips.rocketchip.util.property._
 import freechips.rocketchip.scie._
-import scala.collection.immutable.ListMap
 import scala.collection.mutable.ArrayBuffer
 
 case class RocketCoreParams(
@@ -29,6 +28,8 @@ case class RocketCoreParams(
   nLocalInterrupts: Int = 0,
   nBreakpoints: Int = 1,
   useBPWatch: Boolean = false,
+  mcontextWidth: Int = 0,
+  scontextWidth: Int = 0,
   nPMPs: Int = 8,
   nPerfCounters: Int = 0,
   haveBasicCounters: Boolean = true,
@@ -319,6 +320,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   bpu.io.bp := csr.io.bp
   bpu.io.pc := ibuf.io.pc
   bpu.io.ea := mem_reg_wdata
+  bpu.io.mcontext := csr.io.mcontext
+  bpu.io.scontext := csr.io.scontext
 
   val id_xcpt0 = ibuf.io.inst(0).bits.xcpt0
   val id_xcpt1 = ibuf.io.inst(0).bits.xcpt1
@@ -871,7 +874,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val icache_blocked = !(io.imem.resp.valid || RegNext(io.imem.resp.valid))
   csr.io.counters foreach { c => c.inc := RegNext(perfEvents.evaluate(c.eventSel)) }
 
-  val coreMonitorBundle = Wire(new CoreMonitorBundle(xLen))
+  val coreMonitorBundle = Wire(new CoreMonitorBundle(xLen, fLen))
 
   coreMonitorBundle.clock := clock
   coreMonitorBundle.reset := reset
@@ -934,7 +937,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
 
   // CoreMonitorBundle for late latency writes
-  val xrfWriteBundle = Wire(new CoreMonitorBundle(xLen))
+  val xrfWriteBundle = Wire(new CoreMonitorBundle(xLen, fLen))
 
   xrfWriteBundle.clock := clock
   xrfWriteBundle.reset := reset

@@ -4,14 +4,15 @@
 package freechips.rocketchip.tile
 
 import Chisel._
+import chisel3.withReset
 import freechips.rocketchip.config._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.diplomaticobjectmodel.logicaltree.{DCacheLogicalTreeNode, LogicalModuleTree, LogicalTreeNode, RocketLogicalTreeNode}
+import freechips.rocketchip.diplomaticobjectmodel.logicaltree.{DCacheLogicalTreeNode, LogicalModuleTree, RocketLogicalTreeNode, UTLBLogicalTreeNode}
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.rocket._
-import freechips.rocketchip.subsystem.{SubsystemResetSchemeKey, ResetSynchronous, TileCrossingParamsLike}
+import freechips.rocketchip.subsystem.TileCrossingParamsLike
 import freechips.rocketchip.util._
 
 case class RocketTileParams(
@@ -56,11 +57,7 @@ class RocketTile private(
   override val logicalTreeNode = new RocketLogicalTreeNode(this, p(XLen), pgLevels)
 
   val dtim_adapter = tileParams.dcache.flatMap { d => d.scratch.map { s =>
-    val coreParams = {
-      class C(implicit val p: Parameters) extends HasCoreParameters
-      new C
-    }
-    LazyModule(new ScratchpadSlavePort(AddressSet.misaligned(s, d.dataScratchpadBytes), coreParams.coreDataBytes, tileParams.core.useAtomics && !tileParams.core.useAtomicsOnlyForIO))
+    LazyModule(new ScratchpadSlavePort(AddressSet.misaligned(s, d.dataScratchpadBytes), lazyCoreParamsView.coreDataBytes, tileParams.core.useAtomics && !tileParams.core.useAtomicsOnlyForIO))
   }}
   dtim_adapter.foreach(lm => connectTLSlave(lm.node, lm.node.portParams.head.beatBytes))
 
@@ -108,19 +105,28 @@ class RocketTile private(
 
   override lazy val module = new RocketTileModuleImp(this)
 
-  override def makeMasterBoundaryBuffers(implicit p: Parameters) = {
-    if (!rocketParams.boundaryBuffers) super.makeMasterBoundaryBuffers
-    else TLBuffer(BufferParams.none, BufferParams.flow, BufferParams.none, BufferParams.flow, BufferParams(1))
+  override def makeMasterBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = crossing match {
+    case _: RationalCrossing =>
+      if (!rocketParams.boundaryBuffers) TLBuffer(BufferParams.none)
+      else TLBuffer(BufferParams.none, BufferParams.flow, BufferParams.none, BufferParams.flow, BufferParams(1))
+    case _ => TLBuffer(BufferParams.none)
   }
 
-  override def makeSlaveBoundaryBuffers(implicit p: Parameters) = {
-    if (!rocketParams.boundaryBuffers) super.makeSlaveBoundaryBuffers
-    else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
+  override def makeSlaveBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = crossing match {
+    case _: RationalCrossing =>
+      if (!rocketParams.boundaryBuffers) TLBuffer(BufferParams.none)
+      else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
+    case _ => TLBuffer(BufferParams.none)
   }
 
   val dCacheLogicalTreeNode = new DCacheLogicalTreeNode(dcache, dtim_adapter.map(_.device), rocketParams.dcache.get)
   LogicalModuleTree.add(logicalTreeNode, iCacheLogicalTreeNode)
   LogicalModuleTree.add(logicalTreeNode, dCacheLogicalTreeNode)
+
+  if (rocketParams.core.useVM) {
+    val utlbLogicalTreeNode = new UTLBLogicalTreeNode(rocketParams.core, utlbOMSRAMs)
+    LogicalModuleTree.add(logicalTreeNode, utlbLogicalTreeNode)
+  }
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
@@ -129,22 +135,26 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     with HasICacheFrontendModule {
   Annotated.params(this, outer.rocketParams)
 
-  require(p(SubsystemResetSchemeKey)  == ResetSynchronous,
-    "Rocket only supports synchronous reset at  this time")
-
   val core = Module(new Rocket(outer)(outer.p))
 
-  // Report unrecoverable error conditions; for now the only cause is cache ECC errors
-  outer.reportHalt(List(outer.dcache.module.io.errors))
+  val traceValidEnable = Wire(Bool())
+  withReset(outer.rawReset) {   // use unmodified reset for notification ports
+    // Report unrecoverable error conditions; for now the only cause is cache ECC errors
+    outer.reportHalt(List(outer.dcache.module.io.errors))
 
-  // Report when the tile has ceased to retire instructions; for now the only cause is clock gating
-  outer.reportCease(outer.rocketParams.core.clockGate.option(
-    !outer.dcache.module.io.cpu.clock_enabled &&
-    !outer.frontend.module.io.cpu.clock_enabled &&
-    !ptw.io.dpath.clock_enabled &&
-    core.io.cease))
+    // Report when the tile has ceased to retire instructions; for now the only cause is clock gating
+    outer.reportCease(outer.rocketParams.core.clockGate.option(
+      !outer.dcache.module.io.cpu.clock_enabled &&
+      !outer.frontend.module.io.cpu.clock_enabled &&
+      !ptw.io.dpath.clock_enabled &&
+      core.io.cease))
 
-  outer.reportWFI(Some(core.io.wfi))
+    outer.reportWFI(Some(core.io.wfi))
+
+    val outOfReset = RegInit(0.U(2.W))
+    when (!traceValidEnable) { outOfReset := outOfReset + 1.U }
+    traceValidEnable := outOfReset.andR      // force trace.valid to 0 during and just after async reset without adding any loads to core.reset
+  }
 
   outer.decodeCoreInterrupts(core.io.interrupts) // Decode the interrupt vector
 
@@ -156,6 +166,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   // Pass through various external constants and reports that were bundle-bridged into the tile
   outer.traceSourceNode.bundle <> core.io.trace
+  outer.traceSourceNode.bundle.zip(core.io.trace).foreach { case(tb, t) => tb.valid := t.valid && traceValidEnable }
   core.io.traceStall := outer.traceAuxSinkNode.bundle.stall
   outer.bpwatchSourceNode.bundle <> core.io.bpwatch
   core.io.hartid := outer.hartIdSinkNode.bundle

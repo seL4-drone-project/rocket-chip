@@ -7,7 +7,6 @@ import Chisel._
 import chisel3.dontTouch
 import freechips.rocketchip.amba._
 import freechips.rocketchip.config.{Parameters, Field}
-import freechips.rocketchip.subsystem._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.diplomaticobjectmodel.model.OMSRAM
 import freechips.rocketchip.tile._
@@ -19,7 +18,12 @@ case class DCacheParams(
     nSets: Int = 64,
     nWays: Int = 4,
     rowBits: Int = 64,
-    nTLBEntries: Int = 32,
+    subWordBits: Option[Int] = None,
+    replacementPolicy: String = "random",
+    nTLBSets: Int = 1,
+    nTLBWays: Int = 32,
+    nTLBBasePageSectors: Int = 4,
+    nTLBSuperpages: Int = 4,
     tagECC: Option[String] = None,
     dataECC: Option[String] = None,
     dataECCBytes: Int = 1,
@@ -55,6 +59,8 @@ trait HasL1HellaCacheParameters extends HasL1CacheParameters with HasCoreParamet
 
   def wordBits = coreDataBits
   def wordBytes = coreDataBytes
+  def subWordBits = cacheParams.subWordBits.getOrElse(wordBits)
+  def subWordBytes = subWordBits / 8
   def wordOffBits = log2Up(wordBytes)
   def beatBytes = cacheBlockBytes / cacheDataBeats
   def beatWords = beatBytes / wordBytes
@@ -196,7 +202,8 @@ abstract class HellaCache(staticIdForMetadataUseOnly: Int)(implicit p: Parameter
     minLatency = 1,
     requestFields = tileParams.core.useVM.option(Seq()).getOrElse(Seq(AMBAProtField())))))
 
-  val hartIdSinkNode = BundleBridgeSink[UInt]()
+  val hartIdSinkNodeOpt = cfg.scratch.map(_ => BundleBridgeSink[UInt]())
+  val mmioAddressPrefixSinkNodeOpt = cfg.scratch.map(_ => BundleBridgeSink[UInt]())
 
   val module: HellaCacheModule
 
@@ -220,7 +227,8 @@ class HellaCacheModule(outer: HellaCache) extends LazyModuleImp(outer)
   implicit val edge = outer.node.edges.out(0)
   val (tl_out, _) = outer.node.out(0)
   val io = IO(new HellaCacheBundle(outer))
-  val io_hartid = outer.hartIdSinkNode.bundle
+  val io_hartid = outer.hartIdSinkNodeOpt.map(_.bundle)
+  val io_mmio_address_prefix = outer.mmioAddressPrefixSinkNodeOpt.map(_.bundle)
   dontTouch(io.cpu.resp) // Users like to monitor these fields even if the core ignores some signals
   dontTouch(io.cpu.s1_data)
 
@@ -254,7 +262,8 @@ trait HasHellaCache { this: BaseTile =>
   lazy val dcache: HellaCache = LazyModule(p(BuildHellaCache)(this)(p))
 
   tlMasterXbar.node := dcache.node
-  dcache.hartIdSinkNode := hartIdNode
+  dcache.hartIdSinkNodeOpt.map { _ := hartIdNexusNode }
+  dcache.mmioAddressPrefixSinkNodeOpt.map { _ := mmioAddressPrefixNexusNode }
 }
 
 trait HasHellaCacheModule {

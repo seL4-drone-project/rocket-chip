@@ -8,11 +8,9 @@ import chisel3.util._
 import chisel3.util.HasBlackBoxResource
 import freechips.rocketchip.config.{Field, Parameters}
 import freechips.rocketchip.subsystem._
-import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.amba.apb._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.diplomaticobjectmodel.logicaltree.LogicalModuleTree
-import freechips.rocketchip.diplomaticobjectmodel.model.OMComponent
 import freechips.rocketchip.jtag._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tilelink._
@@ -271,25 +269,26 @@ object Debug {
     }
   }
 
-  def connectDebugClockAndReset(debugOpt: Option[DebugIO], c: Clock)(implicit p: Parameters): Unit = {
+  def connectDebugClockAndReset(debugOpt: Option[DebugIO], c: Clock, sync: Boolean = true)(implicit p: Parameters): Unit = {
     debugOpt.foreach { debug =>
       val dmi_reset = debug.clockeddmi.map(_.dmiReset.asBool).getOrElse(false.B) |
         debug.systemjtag.map(_.reset.asBool).getOrElse(false.B) |
         debug.apb.map(_.reset.asBool).getOrElse(false.B)
-      connectDebugClockHelper(debug, dmi_reset, c)
+      connectDebugClockHelper(debug, dmi_reset, c, sync)
     }
   }
 
-  def connectDebugClockHelper(debug: DebugIO, dmi_reset: Reset, c: Clock)(implicit p: Parameters): Unit = {
+  def connectDebugClockHelper(debug: DebugIO, dmi_reset: Reset, c: Clock, sync: Boolean = true)(implicit p: Parameters): Unit = {
     val debug_reset = Wire(Bool())
     withClockAndReset(c, dmi_reset) {
-      debug_reset := ~AsyncResetSynchronizerShiftReg(in=true.B, sync=3, name=Some("debug_reset_sync"))
+      val debug_reset_syncd = if(sync) ~AsyncResetSynchronizerShiftReg(in=true.B, sync=3, name=Some("debug_reset_sync")) else dmi_reset
+      debug_reset := debug_reset_syncd
     }
     // Need to clock DM during debug_reset because of synchronous reset, so keep
     // the clock alive for one cycle after debug_reset asserts to action this behavior.
     // The unit should also be clocked when dmactive is high.
     withClockAndReset(c, debug_reset.asAsyncReset) {
-      val dmactiveAck = ResetSynchronizerShiftReg(in=debug.dmactive, sync=3, name=Some("dmactiveAck"))
+      val dmactiveAck = if (sync) ResetSynchronizerShiftReg(in=debug.dmactive, sync=3, name=Some("dmactiveAck")) else debug.dmactive
       val clock_en = RegNext(next=dmactiveAck, init=true.B)
       val gated_clock =
         if (!p(DebugModuleKey).get.clockGate) c

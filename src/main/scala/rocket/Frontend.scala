@@ -9,9 +9,7 @@ import chisel3.{withClock,withReset}
 import chisel3.internal.sourceinfo.SourceInfo
 import chisel3.experimental.chiselName
 import freechips.rocketchip.config._
-import freechips.rocketchip.subsystem._
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tile._
 import freechips.rocketchip.util._
 import freechips.rocketchip.util.property._
@@ -97,7 +95,7 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   icache.io.clock_enabled := clock_en
   withClock (gated_clock) { // entering gated-clock domain
 
-  val tlb = Module(new TLB(true, log2Ceil(fetchBytes), TLBConfig(nTLBEntries)))
+  val tlb = Module(new TLB(true, log2Ceil(fetchBytes), TLBConfig(nTLBSets, nTLBWays, outer.icacheParams.nTLBBasePageSectors, outer.icacheParams.nTLBSuperpages)))
 
   val s1_valid = Reg(Bool())
   val s2_valid = RegInit(false.B)
@@ -118,7 +116,7 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   val s2_speculative = Reg(init=Bool(false))
   val s2_partial_insn_valid = RegInit(false.B)
   val s2_partial_insn = Reg(UInt(width = coreInstBits))
-  val wrong_path = Reg(Bool())
+  val wrong_path = RegInit(false.B)
 
   val s1_base_pc = ~(~s1_pc | (fetchBytes - 1))
   val ntpc = s1_base_pc + fetchBytes.U
@@ -352,8 +350,9 @@ trait HasICacheFrontend extends CanHavePTW { this: BaseTile =>
   val frontend = LazyModule(new Frontend(tileParams.icache.get, staticIdForMetadataUseOnly))
   tlMasterXbar.node := frontend.masterNode
   connectTLSlave(frontend.slaveNode, tileParams.core.fetchBytes)
-  frontend.icache.hartIdSinkNode := hartIdNode
-  frontend.resetVectorSinkNode := resetVectorNode
+  frontend.icache.hartIdSinkNodeOpt.foreach { _ := hartIdNexusNode }
+  frontend.icache.mmioAddressPrefixSinkNodeOpt.foreach { _ := mmioAddressPrefixNexusNode }
+  frontend.resetVectorSinkNode := resetVectorNexusNode
   nPTWPorts += 1
 
   // This should be a None in the case of not having an ITIM address, when we

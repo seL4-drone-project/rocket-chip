@@ -6,7 +6,6 @@ import freechips.rocketchip.config.{Parameters}
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
-import freechips.rocketchip.prci._
 import freechips.rocketchip.util._
 
 case class BusAtomics(
@@ -40,7 +39,10 @@ class PeripheryBus(params: PeripheryBusParams, name: String)(implicit p: Paramet
     extends TLBusWrapper(params, name)
 {
   private val replicator = params.replication.map(r => LazyModule(new RegionReplicator(r)))
-  val prefixNode = replicator.map(_.prefix)
+  val prefixNode = replicator.map { r =>
+    r.prefix := addressPrefixNexusNode
+    addressPrefixNexusNode
+  }
 
   private val fixer = LazyModule(new TLFIFOFixer(TLFIFOFixer.all))
   private val node: TLNode = params.atomics.map { pa =>

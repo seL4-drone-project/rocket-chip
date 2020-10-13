@@ -31,7 +31,6 @@ object SynchronizerResetType extends Enumeration {
   val NonSync, Inferred, Sync, Async = Value
 }
 
-import SynchronizerResetType._
 
 // Note: this should not be used directly.
 // Use the companion object to generate this with the correct reset type mixin.

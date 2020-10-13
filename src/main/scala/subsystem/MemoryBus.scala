@@ -2,11 +2,9 @@
 
 package freechips.rocketchip.subsystem
 
-import Chisel._
 import freechips.rocketchip.config._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.interrupts._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 
@@ -36,7 +34,10 @@ class MemoryBus(params: MemoryBusParams, name: String = "memory_bus")(implicit p
     extends TLBusWrapper(params, name)(p)
 {
   private val replicator = params.replication.map(r => LazyModule(new RegionReplicator(r)))
-  val prefixNode = replicator.map(_.prefix)
+  val prefixNode = replicator.map { r =>
+    r.prefix := addressPrefixNexusNode
+    addressPrefixNexusNode
+  }
 
   private val xbar = LazyModule(new TLXbar).suggestName(busName + "_xbar")
   val inwardNode: TLInwardNode =
