@@ -5,13 +5,103 @@ package freechips.rocketchip.diplomacy
 import Chisel.{defaultCompileOptions => _, _}
 import chisel3.internal.sourceinfo.{SourceInfo, UnlocatableSourceInfo}
 import chisel3.{MultiIOModule, RawModule, Reset, withClockAndReset}
-import chisel3.experimental.{ChiselAnnotation}
+import chisel3.experimental.{BaseModule, ChiselAnnotation}
+import chisel3.aop.{Select => CSelect}
 import firrtl.passes.InlineAnnotation
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.util.CompileOptions.NotStrictInferReset
 
 import scala.collection.immutable.{ListMap, SortedMap}
 import scala.util.matching._
+
+object Select {
+  type AnyMixedNode = MixedNode[_, _, _, _ <: Data, _, _, _, _ <: Data]
+
+  case class InwardEdge[Bundle <: Data, EdgeInParams](
+    params: Parameters,
+    bundle: Bundle,
+    edge: EdgeInParams,
+    node: OutwardNode[_, _, Bundle],
+  )
+
+  case class OutwardEdge[Bundle <: Data, EdgeOutParams](
+    params: Parameters,
+    bundle: Bundle,
+    edge: EdgeOutParams,
+    node: InwardNode[_, _, Bundle],
+  )
+
+  def nodes(lazyModule: LazyModule): Iterable[BaseNode] = {
+    lazyModule.nodes
+  }
+
+  private def getInwardEdges[BI <: Data, EI](node: MixedNode[_, _, EI, BI, _, _, _, _ <: Data]): Iterable[InwardEdge[BI, EI]] = {
+    node.iPorts.zip(node.in).map {
+      case ((_, node, params, _), (bundle, edge)) =>
+        InwardEdge(params, bundle, edge, node)
+    }
+  }
+
+  private def getOutwardEdges[BO <: Data, EO](node: MixedNode[_, _, _, _ <: Data, _, _, EO, BO]): Iterable[OutwardEdge[BO, EO]] = {
+    node.oPorts.zip(node.out).map {
+      case ((_, node, params, _), (bundle, edge)) =>
+        OutwardEdge(params, bundle, edge, node)
+    }
+  }
+
+  def collectInwardEdges[T](node: BaseNode)(collect: PartialFunction[InwardEdge[_ <: Data, _], T]): Iterable[T] = {
+    node match {
+      case node: AnyMixedNode =>
+        require(node.instantiated,
+          s"""Select helpers cannot be used with node "${node.name}" that has not been instantiated yet.""")
+        node.bundlesSafeNow = true
+        val result = getInwardEdges(node).collect(collect)
+        node.bundlesSafeNow = false
+        result
+      case _ => Seq.empty
+    }
+  }
+
+  def collectOutwardEdges[T](node: BaseNode)(collect: PartialFunction[OutwardEdge[_ <: Data, _], T]): Iterable[T] = {
+    node match {
+      case node: AnyMixedNode =>
+        require(node.instantiated,
+          s"""Select helpers cannot be used with node "${node.name}" that has not been instantiated yet.""")
+        node.bundlesSafeNow = true
+        val result = getOutwardEdges(node).collect(collect)
+        node.bundlesSafeNow = false
+        result
+      case _ => Seq.empty
+    }
+  }
+
+  def collectOutputs[T](node: BaseNode)(collect: PartialFunction[BaseNode, T]): Iterable[T] = {
+    node.outputs.map(_._1).collect(collect)
+  }
+
+  def collectNodeOutputs[T](lmod: LazyModule)(collect: PartialFunction[BaseNode, T]): Iterable[T] = {
+    val checkedCollect = Function.unlift[BaseNode, T] {
+      case node: AnyMixedNode =>
+        require(node.instantiated, s"""Select helpers cannot be node "${node.name}" that has not been instantiated yet.""")
+        node.bundlesSafeNow = true
+        val result = collect.lift(node)
+        node.bundlesSafeNow = false
+        result
+      case node: BaseNode =>
+        collect.lift(node)
+    }
+    val fn = collectOutputs(_: BaseNode)(checkedCollect)
+    lmod.nodes.flatMap(fn)
+  }
+
+  def collectDeepLazyMod[T](mod: RawModule)(collect: PartialFunction[LazyModule, T]): Iterable[T] = {
+    val collectMod: BaseModule => Option[T] = {
+      case l: LazyModuleImpLike => collect.lift(l.wrapper)
+      case _ => None
+    }
+    CSelect.collectDeep(mod)(Function.unlift(collectMod))
+  }
+}
 
 /** While the [[freechips.rocketchip.diplomacy]] package allows fairly abstract parameter negotiation while constructing a DAG,
   * [[LazyModule]] builds on top of the DAG annotated with the negotiated parameters and leverage's Scala's lazy evaluation property to split Chisel module generation into two phases:
