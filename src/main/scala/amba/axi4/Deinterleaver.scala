@@ -57,7 +57,7 @@ class AXI4Deinterleaver(maxReadBytes: Int, buffer: BufferParams = BufferParams.d
       } else {
         // We only care to deinterleave ids that are actually in use
         val maxFlightPerId = Seq.tabulate(endId) { i =>
-          edgeOut.master.masters.find(_.id.contains(i)).flatMap(_.maxFlight).getOrElse(0)
+          edgeOut.master.masters.collectFirst { case x if x.id.contains(i) => x.maxFlight }.getOrElse(0)
         }
 
         // Queues to buffer R responses
