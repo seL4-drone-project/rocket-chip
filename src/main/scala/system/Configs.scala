@@ -74,3 +74,13 @@ class MMIOPortOnlyConfig extends Config(
 
 class BaseFPGAConfig extends Config(new BaseConfig)
 class DefaultFPGAConfig extends Config(new WithNSmallCores(1) ++ new BaseFPGAConfig)
+
+class MinimalBigConfig extends Config(
+  new WithNBigCores(1) ++
+  new WithDefaultMemPort() ++
+  new WithDefaultMMIOPort() ++
+  new WithTimebase(BigInt(1000000)) ++ // 1 MHz
+  new WithDTS("freechips,rocketchip-unknown", Nil) ++
+  new WithNExtTopInterrupts(2) ++
+  new BaseSubsystemConfig()
+)
