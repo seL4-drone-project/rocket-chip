@@ -11,16 +11,16 @@ import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.util.DontTouch
 
 /** Example Top with periphery devices and ports, and a Rocket subsystem */
-class MinimalBigNoFPUSystem(implicit p: Parameters) extends RocketSubsystem
+class MinimalNoFPUSystem(implicit p: Parameters) extends RocketSubsystem
     with HasHierarchicalBusTopology
     with HasAsyncExtInterrupts
     with CanHaveMasterAXI4MemPort
     with CanHaveMasterAXI4MMIOPort
     with HasPeripheryBootROM {
-  override lazy val module = new MinimalBigNoFPUSystemModuleImp(this)
+  override lazy val module = new MinimalNoFPUSystemModuleImp(this)
 }
 
-class MinimalBigNoFPUSystemModuleImp[+L <: MinimalBigNoFPUSystem](_outer: L) extends RocketSubsystemModuleImp(_outer)
+class MinimalNoFPUSystemModuleImp[+L <: MinimalNoFPUSystem](_outer: L) extends RocketSubsystemModuleImp(_outer)
     with HasExtInterruptsModuleImp
     with HasPeripheryBootROMModuleImp
     with DontTouch

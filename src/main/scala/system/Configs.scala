@@ -85,13 +85,13 @@ class MinimalBigConfig extends Config(
   new BaseSubsystemConfig()
 )
 
-class MinimalBigNoFPUConfig extends Config(
+class MinimalNoFPUConfig extends Config(
+  new WithoutFPU() ++
   new WithNBigCores(1) ++
   new WithDefaultMemPort() ++
   new WithDefaultMMIOPort() ++
   new WithTimebase(BigInt(1000000)) ++ // 1 MHz
   new WithDTS("freechips,rocketchip-unknown", Nil) ++
   new WithNExtTopInterrupts(2) ++
-  new WithoutFPU() ++
   new BaseSubsystemConfig()
 )
