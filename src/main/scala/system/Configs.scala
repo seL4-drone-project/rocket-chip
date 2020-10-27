@@ -86,6 +86,7 @@ class MinimalBigConfig extends Config(
 )
 
 class MinimalNoFPUConfig extends Config(
+  new WithoutTLMonitors() ++
   new WithoutFPU() ++
   new WithNBigCores(1) ++
   new WithDefaultMemPort() ++
